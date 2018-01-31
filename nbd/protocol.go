@@ -1,12 +1,11 @@
 package nbd
 
-import ()
-
 /* --- START OF NBD PROTOCOL SECTION --- */
 
 // this section is in essence a transcription of the protocol from
-// NBD's proto.md; note that that file is *not* GPL. For details of
-// what the options mean, see proto.md
+// NBD's proto.md. For details of
+// what the options mean, see proto.md at
+// https://github.com/NetworkBlockDevice/nbd/blob/master/doc/proto.md
 
 // NBD commands
 const (
@@ -15,8 +14,7 @@ const (
 	NBD_CMD_DISC         = 2
 	NBD_CMD_FLUSH        = 3
 	NBD_CMD_TRIM         = 4
-	NBD_CMD_WRITE_ZEROES = 5
-	NBD_CMD_CLOSE        = 7
+	NBD_CMD_WRITE_ZEROES = 6
 )
 
 // NBD command flags
@@ -142,7 +140,7 @@ type nbdClientFlags struct {
 // NBD client options
 type nbdClientOpt struct {
 	NbdOptMagic uint64
-	NbdOptId    uint32
+	NbdOptID    uint32
 	NbdOptLen   uint32
 }
 
@@ -155,7 +153,7 @@ type nbdExportDetails struct {
 // NBD option reply
 type nbdOptReply struct {
 	NbdOptReplyMagic  uint64
-	NbdOptId          uint32
+	NbdOptID          uint32
 	NbdOptReplyType   uint32
 	NbdOptReplyLength uint32
 }
@@ -204,7 +202,7 @@ const (
 	CMDT_SET_DISCONNECT_RECEIVED             // a disconnect - don't process any further commands
 )
 
-// A map specifying each command
+// CmdTypeMap is a map specifying each command
 var CmdTypeMap = map[int]uint64{
 	NBD_CMD_READ:         CMDT_CHECK_LENGTH_OFFSET | CMDT_REP_PAYLOAD,
 	NBD_CMD_WRITE:        CMDT_CHECK_LENGTH_OFFSET | CMDT_CHECK_NOT_READ_ONLY | CMDT_REQ_PAYLOAD,
@@ -212,5 +210,4 @@ var CmdTypeMap = map[int]uint64{
 	NBD_CMD_FLUSH:        CMDT_CHECK_NOT_READ_ONLY,
 	NBD_CMD_TRIM:         CMDT_CHECK_LENGTH_OFFSET | CMDT_CHECK_NOT_READ_ONLY,
 	NBD_CMD_WRITE_ZEROES: CMDT_CHECK_LENGTH_OFFSET | CMDT_CHECK_NOT_READ_ONLY | CMDT_REQ_FAKE_PAYLOAD,
-	NBD_CMD_CLOSE:        CMDT_SET_DISCONNECT_RECEIVED,
 }

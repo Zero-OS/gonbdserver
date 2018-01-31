@@ -7,13 +7,15 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
-	"github.com/mattn/go-isatty"
 	"io"
 	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/mattn/go-isatty"
+	"github.com/zero-os/0-Disk/errors"
 )
 
 const (
@@ -94,67 +96,70 @@ func (it *IntegrityTest) Reader() {
 	// defer fmt.Fprintf(os.Stderr, ">>>> Reader quitting\n")
 
 	for {
-		if peek, err := it.commands.Peek(4); err != nil {
-			if err == io.EOF {
+		peek, err := it.commands.Peek(4)
+		if err != nil {
+			if errors.Cause(err) == io.EOF {
 				return
 			}
-			it.Abort(fmt.Errorf("Could not peek command source: %v", err))
+			it.Abort(errors.Wrap(err, "Could not peek command source"))
 			return
-		} else {
-			// the peeked bytes should be one of the command magics
-			// unwrap them manually :-(
-			magic := (uint64(peek[0]) << 24) | (uint64(peek[1]) << 16) | (uint64(peek[2]) << 8) | uint64(peek[3])
+		}
 
-			switch magic {
-			case NBD_REQUEST_MAGIC:
-				var cmd nbdRequest
-				if err := binary.Read(it.commands, binary.BigEndian, &cmd); err != nil {
-					if err == io.EOF {
-						return
-					}
-					it.Abort(fmt.Errorf("Could not read command source: %v", err))
+		// the peeked bytes should be one of the command magics
+		// unwrap them manually :-(
+		magic := (uint64(peek[0]) << 24) | (uint64(peek[1]) << 16) | (uint64(peek[2]) << 8) | uint64(peek[3])
+
+		switch magic {
+		case NBD_REQUEST_MAGIC:
+			var cmd nbdRequest
+			if err := binary.Read(it.commands, binary.BigEndian, &cmd); err != nil {
+				if errors.Cause(err) == io.EOF {
 					return
 				}
-				if cmd.NbdRequestMagic != NBD_REQUEST_MAGIC {
-					it.Abort(fmt.Errorf("Bad request magic in command source %x", cmd.NbdRequestMagic))
-					return
-				}
-				cmd.NbdOffset &= ^uint64(BLOCKSIZE - 1)
-				cmd.NbdLength &= ^uint32(BLOCKSIZE - 1)
-				cmd.NbdHandle = getHandle()
-				if it.ni.transmissionFlags&NBD_FLAG_SEND_FUA == 0 {
-					cmd.NbdCommandFlags &= ^NBD_CMD_FLAG_FUA
-				}
-				if CmdTypeMap[int(cmd.NbdCommandType)]&CMDT_CHECK_LENGTH_OFFSET == 0 || cmd.NbdLength > 0 {
-					atomic.AddUint64(&it.statRead, 1)
-					select {
-					case it.send <- cmd:
-					case <-it.quit:
-						return
-					}
-				}
-			case NBD_REPLY_MAGIC:
-				var rep nbdReply
-				if err := binary.Read(it.commands, binary.BigEndian, &rep); err != nil {
-					if err == io.EOF {
-						return
-					}
-					it.Abort(fmt.Errorf("Could not read command source: %v", err))
-					return
-					if rep.NbdReplyMagic != NBD_REPLY_MAGIC {
-						it.Abort(fmt.Errorf("Bad reply magic in command source %x", rep.NbdReplyMagic))
-						return
-					}
-				}
+				it.Abort(errors.Wrap(err, "Could not read command source"))
+				return
+			}
+			if cmd.NbdRequestMagic != NBD_REQUEST_MAGIC {
+				it.Abort(errors.Newf("Bad request magic in command source %x", cmd.NbdRequestMagic))
+				return
+			}
+			cmd.NbdOffset &= ^uint64(BLOCKSIZE - 1)
+			cmd.NbdLength &= ^uint32(BLOCKSIZE - 1)
+			cmd.NbdHandle = getHandle()
+			if it.ni.transmissionFlags&NBD_FLAG_SEND_FUA == 0 {
+				cmd.NbdCommandFlags &= ^NBD_CMD_FLAG_FUA
+			}
+			if CmdTypeMap[int(cmd.NbdCommandType)]&CMDT_CHECK_LENGTH_OFFSET == 0 || cmd.NbdLength > 0 {
+				atomic.AddUint64(&it.statRead, 1)
 				select {
+				case it.send <- cmd:
 				case <-it.quit:
 					return
-				default:
 				}
-			default:
-				it.Abort(fmt.Errorf("Unknown magic: %x", magic))
+			}
+		case NBD_REPLY_MAGIC:
+			var rep nbdReply
+			if err := binary.Read(it.commands, binary.BigEndian, &rep); err != nil {
+				if errors.Cause(err) == io.EOF {
+					return
+				}
+
+				if rep.NbdReplyMagic != NBD_REPLY_MAGIC {
+					it.Abort(errors.Newf("Bad reply magic in command source %x", rep.NbdReplyMagic))
+					return
+				}
+
+				it.Abort(errors.Wrap(err, "Could not read command source"))
 				return
 			}
+			select {
+			case <-it.quit:
+				return
+			default:
+			}
+		default:
+			it.Abort(errors.Newf("Unknown magic: %x", magic))
+			return
 		}
 	}
 }
@@ -175,7 +180,7 @@ func (it *IntegrityTest) Sender() {
 			for {
 				if _, ok := it.inflight[cmd.NbdHandle]; ok {
 					it.inflightMutex.Unlock()
-					it.Abort(fmt.Errorf("Command with handle %08x is already in flight", cmd.NbdHandle))
+					it.Abort(errors.Newf("Command with handle %08x is already in flight", cmd.NbdHandle))
 					return
 				}
 				collision := false
@@ -209,7 +214,7 @@ func (it *IntegrityTest) Sender() {
 			}
 			it.inflightMutex.Unlock()
 			if err := binary.Write(it.ni.conn, binary.BigEndian, cmd); err != nil {
-				it.Abort(fmt.Errorf("Bad write to connection: %v", err))
+				it.Abort(errors.Wrap(err, "Bad write to connection"))
 				return
 			}
 			if cmd.NbdCommandType == NBD_CMD_WRITE {
@@ -219,7 +224,7 @@ func (it *IntegrityTest) Sender() {
 					it.inflightMutex.Unlock()
 					data := it.makeData(cmd.NbdHandle, addr)
 					if _, err := it.ni.conn.Write(data); err != nil {
-						it.Abort(fmt.Errorf("Bad write of data to connection: %v", err))
+						it.Abort(errors.Wrap(err, "Bad write of data to connection"))
 						return
 					}
 				}
@@ -269,7 +274,7 @@ func (it *IntegrityTest) Receiver() {
 		var rep nbdReply
 		var data = make([]byte, 0)
 		if err := binary.Read(it.ni.conn, binary.BigEndian, &rep); err != nil {
-			if err == io.EOF {
+			if errors.Cause(err) == io.EOF {
 				it.inflightMutex.Lock()
 				disconnectSent := it.disconnectSent
 				it.inflightMutex.Unlock()
@@ -283,25 +288,25 @@ func (it *IntegrityTest) Receiver() {
 				return
 			default:
 			}
-			it.Abort(fmt.Errorf("Bad read from connection: %v", err))
+			it.Abort(errors.Wrap(err, "Bad read from connection"))
 			return
 		}
 		if rep.NbdReplyMagic != NBD_REPLY_MAGIC {
-			it.Abort(fmt.Errorf("Bad magic from connection"))
+			it.Abort(errors.Newf("Bad magic from connection"))
 			return
 		}
 		it.inflightMutex.Lock()
 		cmd, ok := it.inflight[rep.NbdHandle]
 		if !ok {
 			it.inflightMutex.Unlock()
-			it.Abort(fmt.Errorf("Unexpected handle on reply"))
+			it.Abort(errors.Newf("Unexpected handle on reply"))
 			return
 		}
 		it.inflightMutex.Unlock()
 		if cmd.NbdCommandType == NBD_CMD_READ {
 			data = make([]byte, cmd.NbdLength, cmd.NbdLength)
 			if _, err := io.ReadFull(it.ni.conn, data); err != nil {
-				it.Abort(fmt.Errorf("Bad read of data from connection: %v", err))
+				it.Abort(errors.Wrap(err, "Bad read of data from connection"))
 				return
 			}
 			var a uint64
@@ -310,7 +315,7 @@ func (it *IntegrityTest) Receiver() {
 				handle := it.lastHandle[addr]
 				it.inflightMutex.Unlock()
 				if ok, guessHandle, guessAddr := it.checkData(handle, addr, data[a:a+BLOCKSIZE]); !ok {
-					it.Abort(fmt.Errorf("Corrupt data read handle=%08x expecting handle=%08x addr=%08x. At a guess I got handle=%08x addr=%08x",
+					it.Abort(errors.Newf("Corrupt data read handle=%08x expecting handle=%08x addr=%08x. At a guess I got handle=%08x addr=%08x",
 						cmd.NbdHandle, handle, addr,
 						guessHandle, guessAddr))
 					return
