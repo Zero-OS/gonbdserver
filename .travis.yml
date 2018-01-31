@@ -3,8 +3,8 @@ language: go
 gobuild_args: -tags noceph
 
 go:
-  - 1.5
-  - 1.6
+  - 1.8.x
+  - 1.9.x
   - tip
 
 script:
