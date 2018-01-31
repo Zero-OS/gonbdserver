@@ -1,9 +1,13 @@
-# gonbdserver [![Build Status](https://travis-ci.org/abligh/gonbdserver.svg?branch=master)](https://travis-ci.org/abligh/gonbdserver) [![GoDoc](http://godoc.org/github.com/abligh/gonbdserver?status.png)](http://godoc.org/github.com/abligh/gonbdserver/nbd) [![GitHub release](https://img.shields.io/github/release/abligh/gonbdserver.svg)](https://github.com/abligh/gonbdserver/releases)
+# gonbdserver [![Build Status](https://travis-ci.org/zero-os/gonbdserver.svg?branch=master)](https://travis-ci.org/zero-os/gonbdserver) [![GoDoc](http://godoc.org/github.com/zero-os/gonbdserver?status.png)](http://godoc.org/github.com/zero-os/gonbdserver/nbd)
 
 `gonbdserver` is an NBD server written in Go. Its purpose is not to
 be especially performant, but rather to act as a simple demonstration
 of the implementation of the NBD protocol. That said, where tested
 it appears to be at least as fast as the reference nbdserver implementation.
+
+Requires `Go 1.8` or above.
+
+Forked from: https://github.com/abligh/gonbdserver
 
 Features
 --------
