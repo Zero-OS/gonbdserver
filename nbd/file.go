@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"syscall"
 
 	"github.com/pkg/errors"
 )
@@ -69,11 +70,6 @@ func (fb *FileBackend) HasFlush(ctx context.Context) bool {
 	return true
 }
 
-// GoBackground implements Backend.GoBackground
-func (fb *FileBackend) GoBackground(ctx context.Context) {
-	// No background thread needed
-}
-
 // NewFileBackend generates a new file backend
 func NewFileBackend(ctx context.Context, ec *ExportConfig) (Backend, error) {
 	perms := os.O_RDWR
@@ -89,20 +85,37 @@ func NewFileBackend(ctx context.Context, ec *ExportConfig) (Backend, error) {
 		perms |= os.O_SYNC
 	}
 
-	file, err := os.OpenFile(ec.DriverParameters["path"], perms, 0666)
+	path := ec.DriverParameters["path"]
+	file, err := os.OpenFile(path, perms, 0666)
 	if err != nil {
-		return nil, err
+		if !os.IsNotExist(err) || ec.ReadOnly {
+			return nil, err
+		}
+		file, err = os.Create(path)
+		if err != nil {
+			return nil, err
+		}
 	}
-	stat, err := file.Stat()
+	size, err := FreeSpace(path)
 	if err != nil {
-		file.Close()
 		return nil, err
 	}
 
 	return &FileBackend{
 		file: file,
-		size: uint64(stat.Size()),
+		size: size,
 	}, nil
+}
+
+// FreeSpace return the space available on a disk in bytes
+func FreeSpace(path string) (uint64, error) {
+	var stat syscall.Statfs_t
+	if err := syscall.Statfs(path, &stat); err != nil {
+		return 0, err
+	}
+
+	// Available blocks * size per block = available space in bytes
+	return uint64(stat.Bavail * uint64(stat.Bsize)), nil
 }
 
 // Register our backend
