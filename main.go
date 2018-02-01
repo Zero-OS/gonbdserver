@@ -12,5 +12,5 @@ import (
 func main() {
 	nbd.RegisterFlags()
 	flag.Parse()
-	nbd.Run(nil)
+	nbd.Run(nil, nil)
 }

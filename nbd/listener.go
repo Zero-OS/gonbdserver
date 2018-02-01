@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
@@ -11,9 +13,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/zero-os/0-Disk/errors"
-	"github.com/zero-os/0-Disk/log"
 )
 
 // ExportConfigManager is the interface,
@@ -32,7 +31,7 @@ type ExportConfigManager interface {
 
 // Listener defines a single listener on a given net.Conn address
 type Listener struct {
-	logger          log.Logger              // a logger
+	logger          Logger                  // a logger
 	protocol        string                  // the protocol we are listening on
 	addr            string                  // the address
 	exports         map[string]ExportConfig // a map of static export configurations associated
@@ -86,7 +85,7 @@ func (l *Listener) GetExportConfig(name string) (cfg *ExportConfig, err error) {
 
 	// config could not be dynamically generated or statically found
 	cfg = nil
-	err = errors.Newf("no export config could be found for %q", name)
+	err = fmt.Errorf("no export config could be found for %q", name)
 	return
 }
 
@@ -114,7 +113,6 @@ func (l *Listener) ListExportConfigNames() (names []string) {
 // When sessions come in they are started on a separate context (sessionParentCtx), so that the listener can be killed without
 // killing the sessions
 func (l *Listener) Listen(parentCtx context.Context, sessionParentCtx context.Context, sessionWaitGroup *sync.WaitGroup) {
-
 	addr := l.protocol + ":" + l.addr
 
 	ctx, cancelFunc := context.WithCancel(parentCtx)
@@ -220,13 +218,13 @@ func (l *Listener) initTLS() error {
 	if l.tls.MinVersion != "" {
 		minVersion, ok = tlsVersionMap[strings.ToLower(l.tls.MinVersion)]
 		if !ok {
-			return errors.Newf("Bad minimum TLS version: '%s'", l.tls.MinVersion)
+			return fmt.Errorf("Bad minimum TLS version: '%s'", l.tls.MinVersion)
 		}
 	}
 	if l.tls.MaxVersion != "" {
 		minVersion, ok = tlsVersionMap[strings.ToLower(l.tls.MaxVersion)]
 		if !ok {
-			return errors.Newf("Bad maximum TLS version: '%s'", l.tls.MaxVersion)
+			return fmt.Errorf("Bad maximum TLS version: '%s'", l.tls.MaxVersion)
 		}
 	}
 
@@ -234,7 +232,7 @@ func (l *Listener) initTLS() error {
 	if l.tls.ClientAuth != "" {
 		clientAuth, ok = tlsClientAuthMap[strings.ToLower(l.tls.ClientAuth)]
 		if !ok {
-			return errors.Newf("Bad TLS client auth type: '%s'", l.tls.ClientAuth)
+			return fmt.Errorf("Bad TLS client auth type: '%s'", l.tls.ClientAuth)
 		}
 	}
 
@@ -250,9 +248,9 @@ func (l *Listener) initTLS() error {
 }
 
 // NewListener returns a new listener object
-func NewListener(logger log.Logger, s ServerConfig) (*Listener, error) {
+func NewListener(logger Logger, s ServerConfig) (*Listener, error) {
 	if logger == nil {
-		return nil, errors.New("NewListener: requires a non-nil logger")
+		logger = &StandardLogger{}
 	}
 
 	exportMap := make(map[string]ExportConfig, len(s.Exports))

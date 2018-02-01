@@ -5,7 +5,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/zero-os/0-Disk/errors"
+	"github.com/pkg/errors"
 )
 
 // FileBackend implements Backend

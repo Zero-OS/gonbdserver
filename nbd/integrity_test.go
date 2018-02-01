@@ -120,7 +120,7 @@ func (it *IntegrityTest) Reader() {
 				return
 			}
 			if cmd.NbdRequestMagic != NBD_REQUEST_MAGIC {
-				it.Abort(errors.Newf("Bad request magic in command source %x", cmd.NbdRequestMagic))
+				it.Abort(fmt.Errorf("Bad request magic in command source %x", cmd.NbdRequestMagic))
 				return
 			}
 			cmd.NbdOffset &= ^uint64(BLOCKSIZE - 1)
@@ -145,7 +145,7 @@ func (it *IntegrityTest) Reader() {
 				}
 
 				if rep.NbdReplyMagic != NBD_REPLY_MAGIC {
-					it.Abort(errors.Newf("Bad reply magic in command source %x", rep.NbdReplyMagic))
+					it.Abort(fmt.Errorf("Bad reply magic in command source %x", rep.NbdReplyMagic))
 					return
 				}
 
@@ -158,7 +158,7 @@ func (it *IntegrityTest) Reader() {
 			default:
 			}
 		default:
-			it.Abort(errors.Newf("Unknown magic: %x", magic))
+			it.Abort(fmt.Errorf("Unknown magic: %x", magic))
 			return
 		}
 	}
@@ -180,7 +180,7 @@ func (it *IntegrityTest) Sender() {
 			for {
 				if _, ok := it.inflight[cmd.NbdHandle]; ok {
 					it.inflightMutex.Unlock()
-					it.Abort(errors.Newf("Command with handle %08x is already in flight", cmd.NbdHandle))
+					it.Abort(fmt.Errorf("Command with handle %08x is already in flight", cmd.NbdHandle))
 					return
 				}
 				collision := false
@@ -292,14 +292,14 @@ func (it *IntegrityTest) Receiver() {
 			return
 		}
 		if rep.NbdReplyMagic != NBD_REPLY_MAGIC {
-			it.Abort(errors.Newf("Bad magic from connection"))
+			it.Abort(fmt.Errorf("Bad magic from connection"))
 			return
 		}
 		it.inflightMutex.Lock()
 		cmd, ok := it.inflight[rep.NbdHandle]
 		if !ok {
 			it.inflightMutex.Unlock()
-			it.Abort(errors.Newf("Unexpected handle on reply"))
+			it.Abort(fmt.Errorf("Unexpected handle on reply"))
 			return
 		}
 		it.inflightMutex.Unlock()
@@ -315,7 +315,7 @@ func (it *IntegrityTest) Receiver() {
 				handle := it.lastHandle[addr]
 				it.inflightMutex.Unlock()
 				if ok, guessHandle, guessAddr := it.checkData(handle, addr, data[a:a+BLOCKSIZE]); !ok {
-					it.Abort(errors.Newf("Corrupt data read handle=%08x expecting handle=%08x addr=%08x. At a guess I got handle=%08x addr=%08x",
+					it.Abort(fmt.Errorf("Corrupt data read handle=%08x expecting handle=%08x addr=%08x. At a guess I got handle=%08x addr=%08x",
 						cmd.NbdHandle, handle, addr,
 						guessHandle, guessAddr))
 					return

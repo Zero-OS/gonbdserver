@@ -15,8 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zero-os/0-Disk/errors"
-	"github.com/zero-os/0-Disk/log"
+	"github.com/pkg/errors"
 )
 
 // Map of configuration text to TLS versions
@@ -47,7 +46,7 @@ type Connection struct {
 	conn               net.Conn              // the connection that is used as the NBD transport
 	plainConn          net.Conn              // the unencrypted (original) connection
 	tlsConn            net.Conn              // the TLS encrypted connection
-	logger             log.Logger            // a logger
+	logger             Logger                // a logger
 	listener           *Listener             // the listener than invoked us
 	export             *Export               // a pointer to the export
 	backend            Backend               // the backend implementation
@@ -111,7 +110,7 @@ type Reply struct {
 }
 
 // NewConnection returns a new Connection object
-func NewConnection(listener *Listener, logger log.Logger, conn net.Conn) (*Connection, error) {
+func NewConnection(listener *Listener, logger Logger, conn net.Conn) (*Connection, error) {
 	if logger == nil {
 		return nil, errors.New("NewConnection requires a non-nil logger")
 	}
@@ -1056,7 +1055,7 @@ func (c *Connection) connectExport(ctx context.Context, ec *ExportConfig) (*Expo
 
 	backendgen, ok := backendMap[driver]
 	if !ok {
-		return nil, errors.Newf("No such driver %s", ec.Driver)
+		return nil, fmt.Errorf("No such driver %s", ec.Driver)
 	}
 
 	backend, err := backendgen(ctx, ec)

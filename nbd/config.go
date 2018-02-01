@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log/syslog"
 	"net/http"
 	// registers profiling HTTP Handlers
 	"context"
@@ -18,8 +17,6 @@ import (
 	"strings"
 	"sync"
 	"syscall"
-
-	"github.com/zero-os/0-Disk/log"
 
 	"github.com/sevlyar/go-daemon"
 	"gopkg.in/yaml.v2"
@@ -87,7 +84,6 @@ type Control struct {
 // Config holds the config that applies to all servers (currently just logging), and an array of server configs
 type Config struct {
 	Servers []ServerConfig // array of server configs
-	Logging LogConfig      // Configuration for logging
 }
 
 // ServerConfig holds the config that applies to each server (i.e. listener)
@@ -127,113 +123,8 @@ type TLSConfig struct {
 // DriverParametersConfig is an arbitrary map of other parameters in string format
 type DriverParametersConfig map[string]string
 
-// LogConfig specifies configuration for logging
-type LogConfig struct {
-	File           string // a file to log to
-	FileMode       string // file mode
-	SyslogFacility string // a syslog facility name - set to enable syslog
-	Debug          bool   // log debug statements
-}
-
-// SyslogWriter is a WriterCloser that logs to syslog with an extracted priority
-type SyslogWriter struct {
-	facility syslog.Priority
-	w        *syslog.Writer
-}
-
-// facilityMap maps textual
-var facilityMap = map[string]syslog.Priority{
-	"kern":     syslog.LOG_KERN,
-	"user":     syslog.LOG_USER,
-	"mail":     syslog.LOG_MAIL,
-	"daemon":   syslog.LOG_DAEMON,
-	"auth":     syslog.LOG_AUTH,
-	"syslog":   syslog.LOG_SYSLOG,
-	"lpr":      syslog.LOG_LPR,
-	"news":     syslog.LOG_NEWS,
-	"uucp":     syslog.LOG_UUCP,
-	"cron":     syslog.LOG_CRON,
-	"authpriv": syslog.LOG_AUTHPRIV,
-	"ftp":      syslog.LOG_FTP,
-	"local0":   syslog.LOG_LOCAL0,
-	"local1":   syslog.LOG_LOCAL1,
-	"local2":   syslog.LOG_LOCAL2,
-	"local3":   syslog.LOG_LOCAL3,
-	"local4":   syslog.LOG_LOCAL4,
-	"local5":   syslog.LOG_LOCAL5,
-	"local6":   syslog.LOG_LOCAL6,
-	"local7":   syslog.LOG_LOCAL7,
-}
-
-// levelMap maps textual levels to syslog levels
-var levelMap = map[string]syslog.Priority{
-	"EMERG":   syslog.LOG_EMERG,
-	"ALERT":   syslog.LOG_ALERT,
-	"CRIT":    syslog.LOG_CRIT,
-	"ERR":     syslog.LOG_ERR,
-	"ERROR":   syslog.LOG_ERR,
-	"WARN":    syslog.LOG_WARNING,
-	"WARNING": syslog.LOG_WARNING,
-	"NOTICE":  syslog.LOG_NOTICE,
-	"INFO":    syslog.LOG_INFO,
-	"DEBUG":   syslog.LOG_DEBUG,
-}
-
-// NewSyslogWriter creates a new syslog writer
-func NewSyslogWriter(facility string) (*SyslogWriter, error) {
-	f := syslog.LOG_DAEMON
-	if ff, ok := facilityMap[facility]; ok {
-		f = ff
-	}
-
-	w, err := syslog.New(f|syslog.LOG_INFO, "gonbdserver:")
-	if err != nil {
-		return nil, err
-	}
-
-	return &SyslogWriter{
-		w: w,
-	}, nil
-}
-
-// Close the channel
-func (s *SyslogWriter) Close() error {
-	return s.w.Close()
-}
-
 var deletePrefix = regexp.MustCompile("gonbdserver:")
 var replaceLevel = regexp.MustCompile("\\[[A-Z]+\\] ")
-
-// Write to the syslog, removing the prefix and setting the appropriate level
-func (s *SyslogWriter) Write(p []byte) (n int, err error) {
-	p1 := deletePrefix.ReplaceAllString(string(p), "")
-	level := ""
-	tolog := string(replaceLevel.ReplaceAllStringFunc(p1, func(l string) string {
-		level = l
-		return ""
-	}))
-	switch level {
-	case "[DEBUG] ":
-		s.w.Debug(tolog)
-	case "[INFO] ":
-		s.w.Info(tolog)
-	case "[NOTICE] ":
-		s.w.Notice(tolog)
-	case "[WARNING] ", "[WARN] ":
-		s.w.Warning(tolog)
-	case "[ERROR] ", "[ERR] ":
-		s.w.Err(tolog)
-	case "[CRIT] ":
-		s.w.Crit(tolog)
-	case "[ALERT] ":
-		s.w.Alert(tolog)
-	case "[EMERG] ":
-		s.w.Emerg(tolog)
-	default:
-		s.w.Notice(tolog)
-	}
-	return len(p), nil
-}
 
 // ParseConfig parses the YAML configuration provided
 func ParseConfig() (*Config, error) {
@@ -263,7 +154,7 @@ func ParseConfig() (*Config, error) {
 //
 // A parent context is given in which the listener runs, as well as a session context in which the sessions (connections) themselves run.
 // This enables the sessions to be retained when the listener is cancelled on a SIGHUP
-func StartServer(parentCtx context.Context, sessionParentCtx context.Context, sessionWaitGroup *sync.WaitGroup, logger log.Logger, s ServerConfig) {
+func StartServer(parentCtx context.Context, sessionParentCtx context.Context, sessionWaitGroup *sync.WaitGroup, logger Logger, s ServerConfig) {
 	ctx, cancelFunc := context.WithCancel(parentCtx)
 
 	defer func() {
@@ -280,40 +171,14 @@ func StartServer(parentCtx context.Context, sessionParentCtx context.Context, se
 	}
 }
 
-// GetLogger returns the configured logger linked to this config
-func (c *Config) GetLogger() (log.Logger, error) {
-	level := log.InfoLevel
-	if c.Logging.Debug {
-		level = log.DebugLevel
-	}
-
-	var handlers []log.Handler
-	if c.Logging.File != "" {
-		handler, err := log.FileHandler(c.Logging.File)
-		if err != nil {
-			return nil, err
-		}
-		handlers = append(handlers, handler)
-	}
-
-	if c.Logging.SyslogFacility != "" {
-		handler, err := log.SyslogHandler(c.Logging.SyslogFacility)
-		if err != nil {
-			return nil, err
-		}
-		handlers = append(handlers, handler)
-	}
-
-	logger := log.New("gonbdserver", level, handlers...)
-	return logger, nil
-}
-
 // RunConfig - this is effectively the main entry point of the program
 //
 // We parse the config, then start each of the listeners, restarting them when we get SIGHUP, but being sure not to kill the sessions
-func RunConfig(control *Control) {
-	// just until we read the configuration
-	logger := log.New("gonbdserver", log.InfoLevel)
+func RunConfig(control *Control, logger Logger) {
+	if logger == nil {
+		logger = &StandardLogger{}
+	}
+
 	var sessionWaitGroup sync.WaitGroup
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	defer func() {
@@ -365,12 +230,6 @@ func RunConfig(control *Control) {
 			return
 		}
 
-		if nlogger, err := c.GetLogger(); err != nil {
-			logger.Infof("Could not load logger: %v\n", err)
-		} else {
-			logger = nlogger
-		}
-
 		logger.Infof("Loaded configuration. Available backends: %s\n", strings.Join(GetBackendNames(), ", "))
 
 		for _, s := range c.Servers {
@@ -411,7 +270,7 @@ func RunConfig(control *Control) {
 // It creates the server in the foreground or as a deamon.
 // It will create the listeners and server based on the config and defaults.
 // Once that's all up and running, the service is ready to receive and reply to NBD Requests.
-func Run(control *Control) {
+func Run(control *Control, logger Logger) {
 	if control == nil {
 		control = &Control{}
 	}
@@ -421,8 +280,9 @@ func Run(control *Control) {
 		go http.ListenAndServe(":8080", nil)
 	}
 
-	// Just for this routine
-	logger := log.New("gonbdserver", log.InfoLevel)
+	if logger == nil {
+		logger = &StandardLogger{}
+	}
 
 	daemon.AddFlag(daemon.StringFlag(&sendSignal, "stop"), syscall.SIGTERM)
 	daemon.AddFlag(daemon.StringFlag(&sendSignal, "reload"), syscall.SIGHUP)
@@ -454,7 +314,7 @@ func Run(control *Control) {
 	}
 
 	if foreground {
-		RunConfig(control)
+		RunConfig(control, logger)
 		return
 	}
 
@@ -507,5 +367,5 @@ func Run(control *Control) {
 		os.Remove(pidFile)
 	}()
 
-	RunConfig(control)
+	RunConfig(control, logger)
 }

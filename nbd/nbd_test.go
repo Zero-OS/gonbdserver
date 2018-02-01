@@ -16,7 +16,7 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/zero-os/0-Disk/errors"
+	"github.com/pkg/errors"
 )
 
 const ConfigTemplate = `
@@ -39,7 +39,6 @@ servers:
     servername: localhost
     clientauth: requireverify
 {{end}}
-logging:
 `
 
 var longtests = flag.Bool("longtests", false, "enable long tests")
@@ -122,7 +121,7 @@ func StartNbd(t *testing.T, tc TestConfig) *NbdInstance {
 	control := &Control{
 		quit: ni.quit,
 	}
-	go Run(control)
+	go Run(control, nil)
 	time.Sleep(100 * time.Millisecond)
 	os.Args = oldArgs
 	return ni
@@ -234,7 +233,7 @@ func (ni *NbdInstance) Connect(t *testing.T) error {
 			return errors.New("Could not receive Tls option reply")
 		}
 		if tlsOptReply.NbdOptReplyMagic != NBD_REP_MAGIC {
-			return errors.Newf("Tls option reply had wrong magic (%x)", tlsOptReply.NbdOptReplyMagic)
+			return fmt.Errorf("Tls option reply had wrong magic (%x)", tlsOptReply.NbdOptReplyMagic)
 		}
 		if tlsOptReply.NbdOptID != NBD_OPT_STARTTLS {
 			return errors.New("Tls option reply had wrong id")
@@ -280,7 +279,7 @@ listloop:
 			return errors.Wrap(err, "Could not receive list option reply")
 		}
 		if listOptReply.NbdOptReplyMagic != NBD_REP_MAGIC {
-			return errors.Newf("List option reply had wrong magic (%x)", listOptReply.NbdOptReplyMagic)
+			return fmt.Errorf("List option reply had wrong magic (%x)", listOptReply.NbdOptReplyMagic)
 		}
 		if listOptReply.NbdOptID != NBD_OPT_LIST {
 			return errors.New("List option reply had wrong id")
@@ -306,7 +305,9 @@ listloop:
 			t.Logf("Found export '%s'", string(name))
 			exports++
 		default:
-			return errors.New("List option reply type was unexpected")
+			return fmt.Errorf(
+				"List option reply type (%x) was unexpected",
+				listOptReply.NbdOptReplyType)
 		}
 	}
 	if exports != 1 {
@@ -333,7 +334,7 @@ func (ni *NbdInstance) Abort(t *testing.T) error {
 		return errors.Wrap(err, "Could not receive abort option reply")
 	}
 	if optReply.NbdOptReplyMagic != NBD_REP_MAGIC {
-		return errors.Newf("abort option reply had wrong magic (%x)", optReply.NbdOptReplyMagic)
+		return fmt.Errorf("abort option reply had wrong magic (%x)", optReply.NbdOptReplyMagic)
 	}
 	if optReply.NbdOptID != NBD_OPT_ABORT {
 		return errors.New("abort option reply had wrong id")
@@ -383,7 +384,7 @@ infoloop:
 			return errors.Wrap(err, "Could not receive go option reply")
 		}
 		if optReply.NbdOptReplyMagic != NBD_REP_MAGIC {
-			return errors.Newf("Go option reply had wrong magic (%x)", optReply.NbdOptReplyMagic)
+			return fmt.Errorf("Go option reply had wrong magic (%x)", optReply.NbdOptReplyMagic)
 		}
 		if optReply.NbdOptID != NBD_OPT_GO {
 			return errors.New("Go option reply had wrong id")
@@ -423,7 +424,9 @@ infoloop:
 				}
 			}
 		default:
-			return errors.New("List option reply type was unexpected")
+			return fmt.Errorf(
+				"List option reply type (%x) was unexpected",
+				optReply.NbdOptReplyType)
 		}
 	}
 
