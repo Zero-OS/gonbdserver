@@ -1,3 +1,5 @@
+> NOTICE: This project has been discontinued in favor of [0-db](https://github.com/rivine/0-db) in combination with our [qemu](https://github.com/gigforks/qemu).
+
 # gonbdserver [![Build Status](https://travis-ci.org/zero-os/gonbdserver.svg?branch=master)](https://travis-ci.org/zero-os/gonbdserver) [![GoDoc](http://godoc.org/github.com/zero-os/gonbdserver?status.png)](http://godoc.org/github.com/zero-os/gonbdserver/nbd)
 
 `gonbdserver` is an NBD server written in Go. Its purpose is not to
